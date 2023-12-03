@@ -67,12 +67,16 @@ var (
 
 const dialTimeout = 1 * time.Second
 
-func printDataOut() {
+func printDataOut(reportTimestamps bool) {
 	for {
 		time.Sleep(time.Second)
 		lastDataIn := atomic.SwapUint64(&dataIn, 0)
 		lastDataOut := atomic.SwapUint64(&dataOut, 0)
-		fmt.Printf("Bandwidth:  %s/s RX  |  %s/s TX\n", humanize.Bytes(lastDataIn), humanize.Bytes(lastDataOut))
+    if reportTimestamps{
+		  log.Printf("Bandwidth:  %s/s RX  |  %s/s TX\n", humanize.Bytes(lastDataIn), humanize.Bytes(lastDataOut))
+    }else{
+		  fmt.Printf("Bandwidth:  %s/s RX  |  %s/s TX\n", humanize.Bytes(lastDataIn), humanize.Bytes(lastDataOut))
+    }
 	}
 }
 
@@ -125,6 +129,7 @@ func runClient(host string) {
 	if proc < 16 {
 		proc = 16 // 16 TCP connections is more than enough to saturate a 100G link.
 	}
+  log.Printf("Number of client procs: %d\n", proc)
 	var wg sync.WaitGroup
 	for i := 0; i < proc; i++ {
 		wg.Add(1)
@@ -153,13 +158,19 @@ func runClient(host string) {
 }
 
 func main() {
+
+  var maxTime = flag.Int64("t", 60, "Max time in seconds")
+  var reportTimestamps = flag.Bool("T", false, "Report timestamps")
+
 	flag.Parse()
+
 	if flag.NArg() == 0 {
 		log.Fatal("provide a list of hostnames or IP addresses")
 	}
 
 	hostMap := make(map[string]struct{}, flag.NArg())
 	for _, host := range flag.Args() {
+    log.Printf("Host %s\n", host)
 		if _, ok := hostMap[host]; ok {
 			log.Fatalln("duplicate arguments found, please make sure all arguments are unique")
 		}
@@ -179,7 +190,7 @@ func main() {
 	time.Sleep(time.Second * 10)
 
 	go runServer()
-	go printDataOut()
+	go printDataOut(*reportTimestamps)
 	for host := range hostMap {
 		resp, err := http.Get("http://" + host + ":" + selfDetectPort + "/" + uniqueStr)
 		if err == nil && resp.StatusCode == http.StatusOK {
@@ -190,5 +201,6 @@ func main() {
 		}
 		go runClient(host)
 	}
-	time.Sleep(time.Hour * 72)
+	//time.Sleep(time.Hour * 72)
+  time.Sleep(time.Second * time.Duration(*maxTime))
 }
